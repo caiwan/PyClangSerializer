@@ -1,0 +1,21 @@
+﻿---
+BasedOnStyle: Microsoft
+AccessModifierOffset: '-4'
+AlignAfterOpenBracket: DontAlign
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: Always
+AllowShortLoopsOnASingleLine: 'true'
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: MultiLine
+BreakConstructorInitializers: AfterColon
+ColumnLimit: '160'
+IncludeBlocks: Regroup
+IncludeIsMainRegex: (Test)?$
+IndentPPDirectives: AfterHash
+NamespaceIndentation: All
+PointerAlignment: Middle
+Standard: Cpp11
+TabWidth: '4'
+UseTab: ForContinuationAndIndentation
+...

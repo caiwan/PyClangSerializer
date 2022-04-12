@@ -1,0 +1,270 @@
+from pprint import pprint
+import unittest
+
+import ddt
+
+from clang.cindex import Index, TranslationUnit
+
+from tools import collect_translation as translator
+
+TEST_SOURCE = """
+#define _TR(...)
+#define NO_TRANSLATE(...)
+
+const auto stringOne = _TR('This is a line of text which will be translated'); 
+const auto stringTwo = _TR('Another line of text'); 
+const auto stringTwo2 = _TR('Another line of text', 'With disambiguation'); 
+const auto stringThree = _TR('One more line', 'With more details'); 
+
+NO_TRANSLATE('This will not something which will be translated')
+
+namespace ns1
+{
+    const auto stringThree = _TR('This one is declared within a namespace'); 
+}
+
+
+int main()
+{
+    printMessage(stringOne); // These aren't the use-case, but included anyway to test if we can handle them.
+    printMessage(stringTwo);
+    printMessage(stringThree);
+    printMessage(ns1::stringThree);
+
+    printMessage(_TR('This is the way we meant to be used'));
+    printMessage(_TR('This is the way we meant to be used')); // This should be grouped with the other identical string
+    printMessage(_TR('This is the way we meant to be used', 'This is a disambiguation')); // This not, because we meant something else
+
+    printMessage(_TR('This is a {feature} which uses some {param}.'), 
+        { { 'feature', 'template' }, { 'param', 'placeholder texts' } });
+
+    for (size_t i = 1; i < 5; ++i) 
+    {
+        printMessage(i <= 1 ? _TR('We have {how_many} thing') : _TR('We have {how_many} things'), 
+        { { 'how_many', std::to_string(i) } });
+    }
+
+    // TODO: Add more scenarios
+}
+
+"""
+
+TEST_DIFF_ORIGINAL_SOURCE = """
+#define _TR(...)
+
+_TR('This will stay still');
+_TR('This will be moved to the end of the file' );
+_TR('This has to appear only once');
+_TR('This has to appear only once');
+_TR('This has to appear only once', 'but we need to distinguish this');
+ 
+_TR('This will be modified'); 
+_TR('This will be removed completely'); 
+_TR('This will be moved to the beginning of the file' );
+_TR('This has to appear only once');
+"""
+
+TEST_DIFF_MODIFIED_SOURCE = """
+#define _TR(...)
+
+_TR('This will be moved to the beginning of the file' );
+_TR('This will stay still');
+_TR('This has to appear only once');
+_TR('This has to appear only once');
+_TR('This has to appear only once', 'but we need to distinguish this');
+_TR('This is a line which we had added' );  
+_TR('This is modified' );
+_TR('This will be moved to the end of the file' );
+_TR('This has to appear only once'); 
+"""
+
+
+def annotated(base_name, *args):
+    class MyString(str):
+        pass
+
+    result = [MyString(s) for s in args]
+    for c, r in zip(range(len(result)), result):
+        setattr(r, "__name__", base_name + "_" + str(c))
+    return result
+
+
+class ClangIndexTests(unittest.TestCase):
+    def setUp(self):
+        self.index = Index.create()
+
+        self.translation_unit = self.index.parse(
+            "tmp.cpp",
+            args=["-std=c++17"],
+            unsaved_files=[("tmp.cpp", TEST_SOURCE)],
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+        )
+
+    def test_collect_macros(self):
+        nodes = [
+            n for n in translator.index_collect_macros(self.translation_unit.cursor)
+        ]
+
+        pprint(nodes)
+
+        self.assertTrue(nodes)
+        self.assertEqual(12, len(nodes))
+
+        for node in nodes:
+            assert isinstance(node, translator.MacroNode)
+
+    def test_collect_tokens(self):
+        nodes = list(
+            translator.find_matching_tokens(
+                self.translation_unit.cursor, translator.TRANSLATION_TOKEN_LIST
+            )
+        )
+
+        pprint([n for n in nodes])
+
+        self.assertTrue(nodes)
+
+        self.assertEqual(11, len(nodes))
+
+        for node in nodes:
+            assert isinstance(node, translator.MacroNode)
+
+    def test_collect_translation_literals(self):
+        nodes = translator.find_matching_tokens(
+            self.translation_unit.cursor, translator.TRANSLATION_TOKEN_LIST
+        )
+        literals = [l for l in translator.collect_translation_literals(nodes)]
+
+        print("[" + "\n".join([str(l) for l in literals]) + "]")
+
+        self.assertTrue(literals)
+        self.assertEqual(10, len(literals))
+
+        for literal in literals:
+            assert isinstance(literal, translator.TranslationLiteralRecord)
+
+
+@ddt.ddt
+class ErrorTests(unittest.TestCase):
+    def setUp(self):
+        self.index = Index.create()
+
+    @ddt.data(
+        *annotated(
+            "test_syntax_error",
+            """
+        #define _TR(...)
+        _TR('This will stay still', );
+        """
+            """
+        #define _TR(...)
+        _TR('This will stay still', 42);
+        """,
+            """
+        #define _TR(...)
+        _TR('one','two','three');
+        """,
+            """
+        #define _TR(...)
+        _TR(42)
+        """,
+        )
+    )
+    def test_syntax_error(self, source):
+        unit = self.index.parse(
+            "tmp.cpp",
+            args=["-std=c++17"],
+            unsaved_files=[("tmp.cpp", source)],
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+        )
+
+        try:
+            nodes = translator.find_matching_tokens(
+                unit.cursor, translator.TRANSLATION_TOKEN_LIST
+            )
+            for literal in translator.collect_translation_literals(nodes):
+                pprint(literal)
+            self.fail("The parser did not throw an exception on a syntax error.")
+        except RuntimeError:
+            pass
+
+
+class TranslationDiffTests(unittest.TestCase):
+    def setUp(self):
+        self.index = Index.create()
+
+        self.unit_original = self.index.parse(
+            "tmp.cpp",
+            args=["-std=c++17"],
+            unsaved_files=[("tmp.cpp", TEST_DIFF_ORIGINAL_SOURCE)],
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+        )
+
+        self.unit_modified = self.index.parse(
+            "tmp.cpp",
+            args=["-std=c++17"],
+            unsaved_files=[("tmp.cpp", TEST_DIFF_MODIFIED_SOURCE)],
+            options=TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+        )
+
+    def test_contents(self):
+        nodes = translator.find_matching_tokens(
+            self.unit_original.cursor, translator.TRANSLATION_TOKEN_LIST
+        )
+        literals = [l for l in translator.collect_translation_literals(nodes)]
+
+        self.assertEqual(7, len(literals))
+
+        expected_literals = [
+            ("This will stay still", None),
+            ("This will be moved to the end of the file", None),
+            ("This has to appear only once", None),
+            ("This has to appear only once", "but we need to distinguish this"),
+            ("This will be modified", None),
+            ("This will be removed completely", None),
+            ("This will be moved to the beginning of the file", None),
+        ]
+
+        for expected, actual in zip(expected_literals, literals):
+            self.assertEqual(expected[0], actual.source, expected[0])
+            self.assertEqual(expected[0], actual.translation, expected[0])
+            self.assertEqual(expected[1], actual.disambiguation, expected[0])
+
+    def test_diff(self):
+        original_nodes = translator.find_matching_tokens(
+            self.unit_original.cursor, translator.TRANSLATION_TOKEN_LIST
+        )
+        original_literals = set(translator.collect_translation_literals(original_nodes))
+
+        modified_nodes = translator.find_matching_tokens(
+            self.unit_modified.cursor, translator.TRANSLATION_TOKEN_LIST
+        )
+        modified_literals = set(translator.collect_translation_literals(modified_nodes))
+
+        self.assertEqual(7, len(original_literals))
+        self.assertEqual(7, len(modified_literals))
+
+        result_literals = translator.ordered_diff_literals(
+            modified_literals, original_literals
+        )
+
+        pprint(result_literals)
+
+        expected_literals = [
+            ("This will be moved to the beginning of the file", None),
+            ("This will stay still", None),
+            ("This has to appear only once", None),
+            ("This has to appear only once", "but we need to distinguish this"),
+            ("This is a line which we had added", None),
+            ("This is modified", None),
+            ("This will be moved to the end of the file", None),
+        ]
+
+        for expected, actual in zip(expected_literals, result_literals):
+            self.assertEqual(expected[0], actual.source, expected[0])
+            self.assertEqual(expected[0], actual.translation, expected[0])
+            self.assertEqual(expected[1], actual.disambiguation, expected[0])
+
+
+if __name__ == "__main__":
+    unittest.main()
