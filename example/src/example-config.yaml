@@ -1,0 +1,9 @@
+---
+templates:
+  - template: "serialize.j2"
+    filename_prefix: "serialize_"
+    filename_suffix: ".cpp"
+    filter_annotations:
+      - SERIALIZABLE
+      - FIELD
+    allow_public_members_only: true

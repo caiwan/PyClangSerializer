@@ -5,7 +5,6 @@
 include(CMakeParseArguments)
 include (PyEnv)
 
-# find_package(LibClang REQUIRED)
 if(DEFINED ENV{CLANG_PATH})
   set(CLANG_PATH "$ENV{CLANG_PATH}")
 else()
@@ -14,45 +13,51 @@ else()
   endif()
 endif()
 
-create_python_venv("venv" PYTHON_VENV_EXECUTABLE)
+# ---
+#
+# ---
 
-if (NOT _PYTHON_CLANG_BINDING_OK)
+function(initialize_code_generator PACKAGE_PATH)
+  create_python_venv("venv" PYTHON_VENV_EXECUTABLE)
 
-    message("${PYTHON_VENV_EXECUTABLE} -m pip install -e ${PROJECT_SOURCE_DIR}/tools/source_index")
+  if (NOT _PYTHON_CLANG_BINDING_OK)
 
-    execute_process(
-        COMMAND ${PYTHON_VENV_EXECUTABLE} -m pip install -e ${PROJECT_SOURCE_DIR}/tools/source_index
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        RESULT_VARIABLE _error_code
-        OUTPUT_VARIABLE _result
-    )
+      message("${PYTHON_VENV_EXECUTABLE} -m pip install ${PACKAGE_PATH}")
+      execute_process(
+          COMMAND ${PYTHON_VENV_EXECUTABLE} -m pip install ${PACKAGE_PATH}
+          WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+          RESULT_VARIABLE _error_code
+          OUTPUT_VARIABLE _result
+      )
 
-    message("${PYTHON_VENV_EXECUTABLE} ${PROJECT_SOURCE_DIR}/cmake/test_clang.py ${CLANG_PATH}")
+    #   message("${PYTHON_VENV_EXECUTABLE} ${PROJECT_SOURCE_DIR}/cmake/test_clang.py ${CLANG_PATH}")
 
-    execute_process(
-      COMMAND ${PYTHON_VENV_EXECUTABLE} ${PROJECT_SOURCE_DIR}/cmake/test_clang.py ${CLANG_PATH}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-      RESULT_VARIABLE _error_code
-      OUTPUT_VARIABLE _result
-  )
+    #   execute_process(
+    #     COMMAND ${PYTHON_VENV_EXECUTABLE} ${PROJECT_SOURCE_DIR}/cmake/test_clang.py ${CLANG_PATH}
+    #     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    #     RESULT_VARIABLE _error_code
+    #     OUTPUT_VARIABLE _result
+    # )
 
-    string(REGEX REPLACE "\n$" "" _result "${_result}")
+    #   string(REGEX REPLACE "\n$" "" _result "${_result}")
 
-    if (_error_code MATCHES "0")
-        message("Python Clang binding OK")
-    else ()
-        message(FATAL_ERROR "Python not installed or requirements not properly set up.\n Exit code: ${_error_code}\n Message: ${_result}")
-    endif ()
+    #   if (_error_code MATCHES "0")
+    #       message("Python Clang binding OK")
+    #   else ()
+    #       message(FATAL_ERROR "Python not installed or requirements not properly set up.\n Exit code: ${_error_code}\n Message: ${_result}")
+    #   endif ()
 
-    # Setup cli script paths
-    get_filename_component(_PY_VENV_LOCATION ${PYTHON_VENV_EXECUTABLE} DIRECTORY)
+    #   # Setup cli script paths
+    #   get_filename_component(_PY_VENV_LOCATION ${PYTHON_VENV_EXECUTABLE} DIRECTORY)
 
-    #TODO: If win32 ...
-    set(_COLLECT_SCRIPT ${_PY_VENV_LOCATION}/collect.exe)
+    #   #TODO: If win32 ...
+    #   set(_COLLECT_SCRIPT ${_PY_VENV_LOCATION}/source_index.exe)
 
-    set(_PYTHON_CLANG_BINDING_OK True)
+    #   set(_PYTHON_CLANG_BINDING_OK True)
 
-endif ()
+  endif ()
+
+endfunction()
 
 # ---
 # Usage:

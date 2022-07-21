@@ -1,0 +1,29 @@
+/*
+ * WARNING: This is an automatically generated source file.
+ * Do NOT modify it manually.
+*/
+
+#include "{{ header}}"
+
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+/'
+{% for class in model.class_types | with_annotation("SERIALIZABLE") -%}
+namespace {{class.namespace | ns }}
+{
+	void from_json(const json & j, {{ class.name }} & o)
+	{
+	{%+ for field in class.fields | with_annotation("FIELD") %}
+	j.at("{{field.name}}").get_to(o.{{field.name}});
+	{% endfor -%}
+	}
+
+	void to_json(json & j, const {{ class.name }} & o)
+	{
+	{%+ for field in class.fields | with_annotation("FIELD")%}
+	j["{{field.name}}"] = o.{{field.name}};
+	{% endfor -%}
+	}
+} // namespace {{ class.namespace | ns }}
+
+{% endfor -%}

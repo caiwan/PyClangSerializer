@@ -2,7 +2,8 @@
 
 import sys
 
-if __name__ == "__main__":
+
+def main():
     try:
         import clang.cindex
 
@@ -16,9 +17,7 @@ if __name__ == "__main__":
             clang.cindex.Config.set_library_path(sys.argv[1])
 
         idx = clang.cindex.Index.create()
-        tu = idx.parse(
-            "tmp.cpp", args=["-std=c++11"], unsaved_files=[("tmp.cpp", s)], options=0
-        )
+        tu = idx.parse("tmp.cpp", args=["-std=c++11"], unsaved_files=[("tmp.cpp", s)], options=0)
         assert tu.get_tokens(extent=tu.cursor.extent) is not None
 
     except ModuleNotFoundError:
@@ -38,3 +37,7 @@ if __name__ == "__main__":
         sys.exit(-4)
 
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
