@@ -13,9 +13,9 @@ import logging
 
 import clang.cindex as clang_index
 
-from source_index import config
-from source_index import parse_source
-from source_index import templating_tools
+from gk.source_index import config
+from gk.source_index import parse_source
+from gk.source_index import templating_tools
 
 
 logger = logging.getLogger(__name__)
