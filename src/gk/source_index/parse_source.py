@@ -5,7 +5,7 @@ from more_itertools import always_iterable
 
 import clang.cindex as clang_index
 
-from source_index.model import (
+from gk.source_index.model import (
     AccessSpecifier,
     AnnotationDescriptor,
     ClassTypeDescriptor,

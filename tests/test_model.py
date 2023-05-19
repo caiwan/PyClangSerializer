@@ -1,5 +1,5 @@
 import clang.cindex as clang_index
-from source_index.parse_source import parse_source_model
+from gk.source_index.parse_source import parse_source_model
 
 
 """

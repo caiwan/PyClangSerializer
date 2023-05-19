@@ -3,7 +3,7 @@ from typing import List
 import jinja2
 import pathlib
 
-from source_index.model import AnnotatedDescriptor
+from gk.source_index.model import AnnotatedDescriptor
 
 
 def _filter_with_annotations(items: List[AnnotatedDescriptor], annotation: str) -> List[AnnotatedDescriptor]:
