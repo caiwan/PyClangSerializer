@@ -3,11 +3,12 @@
  * Do NOT modify it manually.
 */
 
-#include "{{ header}}"
-
 #include <nlohmann/json.hpp>
+
+#include "{{header}}"
+
 using json = nlohmann::json;
-/'
+
 {% for class in model.class_types | with_annotation("SERIALIZABLE") -%}
 namespace {{class.namespace | ns }}
 {

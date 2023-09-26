@@ -16,13 +16,15 @@ from gk.source_index.model import (
 
 import logging
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
 # TODO: Extract this
 class Filter:
     def __init__(self) -> None:
-        self._filter_list: List[Tuple[List[clang_index.CursorKind], Callable[[clang_index.Cursor], bool]]] = []
+        self._filter_list: List[
+            Tuple[List[clang_index.CursorKind], Callable[[clang_index.Cursor], bool]]
+        ] = []
 
     def add_filter(
         self,
@@ -62,7 +64,8 @@ def build_filter(**kwargs) -> Filter:
                 clang_index.CursorKind.CLASS_DECL,
                 clang_index.CursorKind.STRUCT_DECL,
             ],
-            lambda cursor: cursor.access_specifier == clang_index.AccessSpecifier.PUBLIC,
+            lambda cursor: cursor.access_specifier
+            == clang_index.AccessSpecifier.PUBLIC,
         )
 
     if accepted_annotations:
@@ -109,9 +112,13 @@ def fetch_annotations(
     filter_fn: Callable[[clang_index.Cursor], bool],
     namespace: str = "",
 ):
-    if cursor.kind in [clang_index.CursorKind.MACRO_INSTANTIATION] and filter_fn(cursor):
+    if cursor.kind in [clang_index.CursorKind.MACRO_INSTANTIATION] and filter_fn(
+        cursor
+    ):
         (name, target, arguments) = fetch_annotation_tokens(cursor)
-        yield namespace + "::" + target, AnnotationDescriptor(arguments=arguments, name=name)
+        yield namespace + "::" + target, AnnotationDescriptor(
+            arguments=arguments, name=name
+        )
 
     elif cursor.kind is clang_index.CursorKind.NAMESPACE:
         namespace += f"::{cursor.spelling}"
@@ -183,7 +190,9 @@ def parse_class_types(
     annotation_map: Dict[str, List[AnnotationDescriptor]],
     filter_fn: Callable[[clang_index.Cursor], bool],
 ) -> ClassTypeDescriptor:
-    return list(fetch_class_defintions(translation_unit.cursor, annotation_map, filter_fn))
+    return list(
+        fetch_class_defintions(translation_unit.cursor, annotation_map, filter_fn)
+    )
 
 
 def parse_function_types(
@@ -204,7 +213,9 @@ def parse_source_model(
 
         return SourceModel(
             class_types=parse_class_types(translation_unit, annotation_map, filter_fn),
-            function_types=parse_function_types(translation_unit, annotation_map, filter_fn),
+            function_types=parse_function_types(
+                translation_unit, annotation_map, filter_fn
+            ),
         )
     return None
 
@@ -212,7 +223,7 @@ def parse_source_model(
 # ---
 def _debug_walk_source_model(cursor: clang_index.Cursor, indent=""):
     if not str(cursor.spelling).startswith("_"):
-        logger.debug(
+        LOGGER.debug(
             f"{indent} {cursor.spelling} \t {cursor.kind} [{' '.join([j.spelling for j in cursor.get_tokens()])}]"
         )
         for child in cursor.get_children():

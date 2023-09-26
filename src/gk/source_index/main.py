@@ -18,7 +18,7 @@ from gk.source_index import parse_source
 from gk.source_index import templating_tools
 
 
-logger = logging.getLogger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 CLANG_PARSE_OPTIONS = (
     clang_index.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
@@ -92,6 +92,16 @@ def build_argparser() -> argparse.ArgumentParser:
         help="Include directories",
     )
 
+    args.add_argument(
+        "--clang-path",
+        "-C",
+        dest="clang_path",
+        type=str,
+        required=False,
+        help="Path to clang library",
+        default=os.getenv("CLANG_PATH"),
+    )
+
     return args
 
 
@@ -117,38 +127,48 @@ def create_translation_units(
 
 
 def main():
-    logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
-    # TODO: Add this to config and/or param
-    clang_index.Config.set_library_path(os.getenv("CLANG_PATH"))
+    logging.basicConfig(
+        stream=sys.stdout, level=logging.INFO, format="[%(levelname)s] %(message)s"
+    )  # noqa: E501
 
     args = fetch_args()
+    clang_index.Config.set_library_path(args.clang_path)
     config_path = pathlib.Path(args.config_path)
     app_config = config.load_app_config(config_path)
 
     root_dir = pathlib.Path(config_path.parent)
     target_path = pathlib.Path(args.target_path)
 
+    target_path.mkdir(parents=True, exist_ok=True)
+
     translation_units: Dict[pathlib.Path, clang_index.TranslationUnit] = dict(
         create_translation_units(args.input_files)
     )
 
     # TODO: Clean this part up
-    j2_env = templating_tools.build_jinja_environment(root_dir) if not args.is_export_json else None
+    j2_env = (
+        templating_tools.build_jinja_environment(root_dir)
+        if not args.is_export_json
+        else None
+    )
     for template_config in app_config.templates:
-
         for source_name, translation_unit in translation_units.items():
-            logger.info(f"Parsing {source_name}")
+            LOGGER.info(f"Parsing {source_name}")
             parsing_filter = parse_source.build_filter(**template_config.to_dict())
-            source_model = parse_source.parse_source_model(translation_unit, parsing_filter)
+            source_model = parse_source.parse_source_model(
+                translation_unit, parsing_filter
+            )
 
             target_filename = target_path / pathlib.Path(
-                template_config.filename_prefix + source_name.stem + template_config.filename_suffix
+                template_config.filename_prefix
+                + source_name.stem
+                + template_config.filename_suffix
             )
 
             if not args.is_export_json:
                 # TODO: Extract this to a function
                 template = j2_env.get_template(str(template_config.template))
-                logger.info(f"Generating code from {template_config.template}")
+                LOGGER.info(f"Generating code from {template_config.template}")
                 with open(target_filename, "w") as f:
                     result = template.render(
                         header=str(source_name).replace("\\", "/"),
@@ -160,7 +180,7 @@ def main():
                 # TODO: Extract this to a function
                 json_file = target_filename.with_suffix(".json")
                 with open(json_file, "w") as f:
-                    logger.info(f"Exporting model to {json_file}")
+                    LOGGER.info(f"Exporting model to {json_file}")
                     json.dump(source_model, f, cls=CustomJSONEncoder)
 
 
