@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import argparse
 import sys
 import os
@@ -109,6 +109,18 @@ def fetch_args() -> Any:
     return build_argparser().parse_args()
 
 
+def find_relative_path(
+    file_path: pathlib.Path, directories: List[pathlib.Path]
+) -> Optional[pathlib.Path]:
+    for directory in directories:
+        try:
+            relative_path = file_path.relative_to(directory)
+            return relative_path
+        except ValueError:
+            continue
+    return None
+
+
 def create_translation_units(
     source_files: List[str],
 ) -> Tuple[pathlib.Path, clang_index.TranslationUnit]:
@@ -117,13 +129,33 @@ def create_translation_units(
     for source_file in source_files:
         source_path = pathlib.Path(source_file)
         if source_path.exists():
-            yield source_path, clang_index_parser.parse(
+            yield source_path.absolute(), clang_index_parser.parse(
                 str(source_path),
                 args=["-std=c++11"],
                 options=CLANG_PARSE_OPTIONS,
             )
         else:
             raise RuntimeError(f"Cannot open file {source_path}")
+
+
+# TODO: Typing
+def write_template(j2_env, template_config, header_file, source_model, target_filename):
+    template = j2_env.get_template(str(template_config.template))
+    LOGGER.info(f"Generating code from {template_config.template}")
+    with target_filename.open("w") as f:
+        result = template.render(
+            header=str(header_file),
+            model=source_model,
+        )
+        f.write(result)
+
+
+# TODO: Typing
+def export_json(source_model, target_filename):
+    target_json = target_filename.with_suffix(".json")
+    with target_json.open("w") as f:
+        LOGGER.info(f"Exporting model to {target_json}")
+        json.dump(source_model, f, cls=CustomJSONEncoder)
 
 
 def main():
@@ -145,43 +177,41 @@ def main():
         create_translation_units(args.input_files)
     )
 
-    # TODO: Clean this part up
     j2_env = (
         templating_tools.build_jinja_environment(root_dir)
         if not args.is_export_json
         else None
     )
     for template_config in app_config.templates:
-        for source_name, translation_unit in translation_units.items():
-            LOGGER.info(f"Parsing {source_name}")
+        for source_file, translation_unit in translation_units.items():
+            target_file = target_path / pathlib.Path(
+                template_config.filename_prefix
+                + source_file.stem
+                + template_config.filename_suffix
+            )
+
+            # Skip if the target file is newer than the source file
+            if source_file.stat().st_mtime < target_file.stat().st_mtime:
+                LOGGER.info(f"Skipping {source_file} (target file is newer)")
+                continue
+
+            LOGGER.info(f"Parsing {source_file}")
             parsing_filter = parse_source.build_filter(**template_config.to_dict())
             source_model = parse_source.parse_source_model(
                 translation_unit, parsing_filter
             )
 
-            target_filename = target_path / pathlib.Path(
-                template_config.filename_prefix
-                + source_name.stem
-                + template_config.filename_suffix
-            )
-
             if not args.is_export_json:
-                # TODO: Extract this to a function
-                template = j2_env.get_template(str(template_config.template))
-                LOGGER.info(f"Generating code from {template_config.template}")
-                with open(target_filename, "w") as f:
-                    result = template.render(
-                        header=str(source_name).replace("\\", "/"),
-                        model=source_model,
-                    )
-                    f.write(result)
-
+                header_file = find_relative_path(source_file, args.includes)
+                write_template(
+                    j2_env,
+                    template_config,
+                    header_file,
+                    source_model,
+                    target_file,
+                )
             else:
-                # TODO: Extract this to a function
-                json_file = target_filename.with_suffix(".json")
-                with open(json_file, "w") as f:
-                    LOGGER.info(f"Exporting model to {json_file}")
-                    json.dump(source_model, f, cls=CustomJSONEncoder)
+                export_json(source_model, target_file)
 
 
 if __name__ == "__main__":
