@@ -108,11 +108,11 @@ def build_argparser() -> argparse.ArgumentParser:
 def fetch_args() -> Any:
     return build_argparser().parse_args()
 
-
+# TOOD -> utils
 def find_relative_path(
     file_path: pathlib.Path, directories: List[pathlib.Path]
 ) -> Optional[pathlib.Path]:
-    for directory in directories:
+    for directory in sorted(directories, key=lambda path: len(path.parts), reverse=True):
         try:
             relative_path = file_path.relative_to(directory)
             return relative_path
@@ -183,30 +183,30 @@ def main():
         else None
     )
     for template_config in app_config.templates:
-        for source_file, translation_unit in translation_units.items():
+        for header_file, translation_unit in translation_units.items():
             target_file = target_path / pathlib.Path(
                 template_config.filename_prefix
-                + source_file.stem
+                + header_file.stem
                 + template_config.filename_suffix
             )
 
             # Skip if the target file is newer than the source file
-            if source_file.stat().st_mtime < target_file.stat().st_mtime:
-                LOGGER.info(f"Skipping {source_file} (target file is newer)")
+            if header_file.stat().st_mtime < target_file.stat().st_mtime:
+                LOGGER.info(f"Skipping {header_file} (target file is newer)")
                 continue
 
-            LOGGER.info(f"Parsing {source_file}")
+            LOGGER.info(f"Parsing {header_file}")
             parsing_filter = parse_source.build_filter(**template_config.to_dict())
             source_model = parse_source.parse_source_model(
                 translation_unit, parsing_filter
             )
 
             if not args.is_export_json:
-                header_file = find_relative_path(source_file, args.includes)
+                header_include_path = find_relative_path(header_file, args.includes) or header_file
                 write_template(
                     j2_env,
                     template_config,
-                    header_file,
+                    header_include_path,
                     source_model,
                     target_file,
                 )
