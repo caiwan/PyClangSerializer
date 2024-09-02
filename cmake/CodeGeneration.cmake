@@ -1,6 +1,6 @@
 # Allows run custom code generation using prototypes
 
-# Bootsreap
+# Bootsraps
 if(DEFINED ENV{CLANG_PATH})
 	set(CLANG_PATH "$ENV{CLANG_PATH}")
 else()
@@ -55,69 +55,121 @@ function(_string_camel_case_to_upper_snake_case str var)
 	string(TOUPPER ${str} ${var})
 endfunction(_string_camel_case_to_upper_snake_case var str)
 
-# ---
-#
-# ---
-function(initialize_code_generator PACKAGE_PATH)
-	if(NOT _PYTHON_CLANG_BINDING_OK)
-		_create_python_venv("venv" PYTHON_VENV_SCRIPT_PATH)
+function(_execute_pyton)
+	if (NOT PYTHON_VENV_EXECUTABLE)
+		message(FATAL_ERROR "Python executable is not set")
+	endif ()
 
-		if(WIN32)
-			set(PIP_PATH ${PYTHON_VENV_SCRIPT_PATH}/pip.exe)
+	cmake_parse_arguments(
+		ARGS # prefix
+		""
+		"SCRIPT;MODULE;RESULT,RETURNCODE" # single-values
+		"OPTIONS"	 # lists
+		${ARGN}
+	)
+
+	if (ARGS_MODULE)
+		set(_command ${PYTHON_VENV_EXECUTABLE} "-m" ${ARGS_MODULE} ${ARGS_OPTIONS})
+	elseif (ARGS_SCRIPT)
+		set(_command ${PYTHON_VENV_EXECUTABLE} ${ARGS_SCRIPT} ${ARGS_OPTIONS})
+	else ()
+		message(FATAL_ERROR "You must provide a valid script or module")
+	endif ()
+
+	if (ARGS_RESULT)
+		set(_result ${ARGS_RESULT})
+	else ()
+		set(_result "_result")
+	endif ()
+
+	if (ARGS_RETURNCODE)
+		set(_error_code ${ARGS_RETURNCODE})
+	else ()
+		set(_error_code "_error_code")
+	endif ()
+
+	execute_process(
+		COMMAND ${_command}
+		WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+		RESULT_VARIABLE ${_error_code}
+		OUTPUT_VARIABLE ${_result}
+		COMMAND_ECHO STDOUT
+	)
+
+endfunction(_execute_pyton)
+
+# ---
+# Initialize code generator
+# Usage:
+# PACKAGE_PATH path to the package to install
+#
+# This function will install the package and check if the clang is available
+# ---
+function(initialize_code_generator)
+	create_python_venv("venv" PYTHON_VENV_EXECUTABLE)
+
+
+	cmake_parse_arguments(
+		ARGS # prefix
+		"EDITABLE"
+		"PACKAGE" # single-values
+		""	 # lists
+		${ARGN}
+	)
+
+	if (NOT ARGS_PACKAGE)
+		message(FATAL_ERROR "You must provide a package name")
+	endif ()
+
+	if (NOT _PYTHON_CLANG_BINDING_OK)
+		_execute_pyton(MODULE "pip" OPTIONS install --upgrade setuptools setuptools_scm pip wheel)
+		_execute_pyton(MODULE "pip" OPTIONS install "cython<3.0.0")
+
+		if (ARGS_EDITABLE)
+			_execute_pyton(MODULE "pip" OPTIONS install --editable ${ARGS_PACKAGE})
+		else ()
+			_execute_pyton(MODULE "pip" OPTIONS install ${ARGS_PACKAGE})
+		endif ()
+
+		if (WIN32)
+			get_filename_component(PYTHON_VENV_SCRIPT_PATH ${PYTHON_VENV_EXECUTABLE} DIRECTORY)
 			set(CLANG_CHECK_PATH ${PYTHON_VENV_SCRIPT_PATH}/check-clang.exe)
 			set(_GENERATE_CODE_PATH ${PYTHON_VENV_SCRIPT_PATH}/generate-code.exe PARENT_SCOPE CACHE STRING "Generate code script path" FORCE)
-		elseif(UNIX)
-			# TODO:
-			message(FATAL_ERROR "Unsupported platform")
-		else()
-			message(FATAL_ERROR "Unsupported platform")
-		endif()
-
-		message("Pip install: ${PIP_PATH} install ${PACKAGE_PATH}")
-		execute_process(
-			COMMAND ${PIP_PATH} install ${PACKAGE_PATH}
-			WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-			RESULT_VARIABLE _error_code
-			OUTPUT_VARIABLE _result
-			COMMAND_ECHO STDOUT
-		)
-		message("\n${_result}\n")
-		if(_error_code MATCHES "0")
-			message("Pip install OK")
-		else()
-			message(FATAL_ERROR "Python not installed or requirements not properly set up.\n Exit code: ${_error_code}")
-			set(_PYTHON_CLANG_BINDING_OK 0 PARENT_SCOPE CACHE BOOL "Python clang binding OK" FORCE)
-			return()
-		endif()
-
-		message("Check clang: ${CLANG_CHECK_PATH} ${CLANG_PATH}")
+		else ()
+			get_filename_component(PYTHON_VENV_SCRIPT_PATH ${PYTHON_VENV_EXECUTABLE} DIRECTORY)
+			set(CLANG_CHECK_PATH ${PYTHON_VENV_SCRIPT_PATH}/check-clang)
+			set(_GENERATE_CODE_PATH ${PYTHON_VENV_SCRIPT_PATH}/generate-code PARENT_SCOPE CACHE STRING "Generate code script path" FORCE)
+		endif ()
 
 		execute_process(
 			COMMAND ${CLANG_CHECK_PATH} ${CLANG_PATH}
-			WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+			WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 			RESULT_VARIABLE _error_code
 			OUTPUT_VARIABLE _result
 			COMMAND_ECHO STDOUT
 		)
-		message("\n${_result}\n")
-		if(_error_code MATCHES 0)
-			message("Python Clang binding OK")
-		else()
-			message(FATAL_ERROR "Python not installed or requirements not properly set up.\n Exit code: ${_error_code}")
-			set(_PYTHON_CLANG_BINDING_OK 0 PARENT_SCOPE)
-			return()
-		endif()
+		string(REGEX REPLACE "\n$" "" _result "${_result}")
 
-		set(_PYTHON_CLANG_BINDING_OK 0 PARENT_SCOPE CACHE BOOL "Python clang binding OK" FORCE)
-	endif()
+		if (_error_code MATCHES "0")
+			message("Python Clang binding OK")
+		else ()
+			message(FATAL_ERROR "Python not installed or requirements not properly set up.\n Exit code: ${_error_code}\n Message: ${_result}")
+		endif ()
+
+		set(_PYTHON_CLANG_BINDING_OK True PARENT_SCOPE CACHE BOOL "Python clang binding OK" FORCE)
+	endif ()
 endfunction()
 
 # ---
+# Execute python script utility
+#
 # Usage:
 # TARGET target to add to
 # PRE_BUILD, POST_BUILD or PRE_LINK (PRE_BUILD default)
 # SCRIPT script path
 #
+# This function will execute the generator script during the build time
+# ---
 function(_add_execute_script_target)
 	if(NOT _PYTHON_CLANG_BINDING_OK)
 		message(FATAL_ERROR "Python clang script is not installed or not properly set up.")
@@ -171,13 +223,16 @@ function(_add_execute_script_target)
 endfunction(_add_execute_script_target)
 
 # ---
-
-# Usage:
+# Add code generation target
 #
+# Usage:
 # TARGET target which generation will attached to
 # OUT_DIR where collected translations are collected
 # SOURCES sources to be scanned
 # INPUT_DIR directory where sources are
+#
+# Allows run custom code generation using prototypes
+# ---
 function(add_code_generation_target)
 	if(NOT _PYTHON_CLANG_BINDING_OK)
 		message(FATAL_ERROR "Clang Python binding Sctipt is not installed or not properly set up.")
