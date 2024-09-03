@@ -23,6 +23,7 @@ LOGGER = logging.getLogger(__name__)
 CLANG_PARSE_OPTIONS = (
     clang_index.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD
     | clang_index.TranslationUnit.PARSE_SKIP_FUNCTION_BODIES
+    | clang_index.TranslationUnit.PARSE_INCOMPLETE
 )
 
 
@@ -99,7 +100,7 @@ def build_argparser() -> argparse.ArgumentParser:
         type=str,
         required=False,
         help="Path to clang library",
-        default=os.getenv("CLANG_PATH"),
+        default=None, #os.getenv("CLANG_PATH"),
     )
 
     return args
@@ -129,6 +130,7 @@ def create_translation_units(
     for source_file in source_files:
         source_path = pathlib.Path(source_file)
         if source_path.exists():
+            logging.info(f"Creating translation unit for {source_path}")
             yield source_path.absolute(), clang_index_parser.parse(
                 str(source_path),
                 args=["-std=c++11"],
@@ -158,19 +160,8 @@ def export_json(source_model, target_filename):
         json.dump(source_model, f, cls=CustomJSONEncoder)
 
 
-def main():
-    logging.basicConfig(
-        stream=sys.stdout, level=logging.INFO, format="[%(levelname)s] %(message)s"
-    )  # noqa: E501
-
-    args = fetch_args()
-    clang_index.Config.set_library_path(args.clang_path)
-    config_path = pathlib.Path(args.config_path)
-    app_config = config.load_app_config(config_path)
-
-    root_dir = pathlib.Path(config_path.parent)
+def execute(app_config, args, root_dir):
     target_path = pathlib.Path(args.target_path)
-
     target_path.mkdir(parents=True, exist_ok=True)
 
     translation_units: Dict[pathlib.Path, clang_index.TranslationUnit] = dict(
@@ -212,6 +203,29 @@ def main():
                 )
             else:
                 export_json(source_model, target_file)
+
+
+def main():
+    logging.basicConfig(
+        stream=sys.stdout, level=logging.INFO, format="[%(levelname)s] %(message)s"
+    )  # noqa: E501
+
+    args = fetch_args()
+
+    if args.clang_path is not None:
+        clang_index.Config.set_library_path(args.clang_path)
+        logging.info(f"Using clang library path: {args.clang_path}")
+
+    config_path = pathlib.Path(args.config_path)
+    app_config = config.load_app_config(config_path)
+
+    root_dir = pathlib.Path(config_path.parent)
+
+    try:
+        execute(app_config, args, root_dir)
+    except Exception as e:
+        LOGGER.error(f"Error: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
